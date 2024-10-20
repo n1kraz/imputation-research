@@ -57,8 +57,6 @@ sys.path.append(os.path.join(home_dir, 'checks'))   # The path to the folder con
 # Setting path to the data
 data_path = f"{home_dir}\data"
 
-# Utility modules
-from check_training import *
 
 
 
