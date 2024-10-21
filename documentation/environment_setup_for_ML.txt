@@ -1,0 +1,18 @@
+Latest versions of tensorflow are not supported on Windows Native: https://www.tensorflow.org/install/pip#windows-native
+
+So we should use a legacy version of it. The best way to deal with it is to make special conda environment for ML:
+
+Details can be found here: https://www.youtube.com/watch?v=GFTlcKzhmoE&ab_channel=JohnnyTheDataScientist
+
+1. Install anaconda
+2. Open Anaconda Prompt
+3. Make a new environment: conda create --name tensorflowgpu python=3.10
+4. Activate it: conda activate tensorflowgpu
+5. Install compatable versions of cuda packages: conda install -c conda-forge cudatoolkit=11.2 cufnn=8.1.0
+6. Install gpu-compatable tensorflow for Windows Native: pip install tensorflow==2.10
+7. Install jupyter lab from navigator or: conda install -c conda-forge jupyterlab
+8. Try starting jupyther lab: jupyter lab, if rises an error - install all missing packages (e.g., conda install -c conda-forge chardet)
+9. Install other needed packages like pandas and numpy
+10. It is much easier to open jupether lab from context menu, than navigate to the right folder every time: 
+start_jupyter_cm (installation instructions github: conda install -c conda-forge start_jupyter_cm) https://github.com/hyperspy/start_jupyter_cm#microsoft-windows
+11. Install it for both base Anaconda environment and for the tensorflowgpu

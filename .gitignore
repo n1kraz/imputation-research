@@ -1,2 +1,8 @@
 # Ignore Jupyter notebook checkpoints
-.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+**/__pycache__/
+data/SMHI_data/
+data/raw_data/
+data/sampling_data/
+documentation/Steps of my data pre-processing (finished).docx
+models_archive/
