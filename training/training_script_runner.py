@@ -3,6 +3,7 @@
 
 import subprocess
 import os
+from datetime import datetime
 from pathlib import Path
 
 # Change working directory to the location of this script
@@ -20,14 +21,6 @@ config_dir = f"{home_dir}/training/configs"
 config_files = [os.path.join(config_dir, file) for file in os.listdir(config_dir) if file.endswith('.ini')]
 print(config_files)
 
-# # List of .ini configuration file paths
-# config_files = [
-#     'config1.ini',
-#     'config2.ini',
-#     'config3.ini',
-#     'config4.ini',
-#     'config5.ini'
-# ]
 
 # Path to the script to run
 script_path = 'training_script.py'
@@ -40,3 +33,10 @@ for config_file in config_files:
     subprocess.run(['python', script_path, '--config', config_file], check=True)
     
     print(f"Finished running with configuration {config_file}\n")
+
+
+
+
+# Print the current time
+current_time = datetime.now()
+print('Finished training models at:', current_time)

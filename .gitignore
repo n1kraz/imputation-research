@@ -1,8 +1,14 @@
-# Ignore Jupyter notebook checkpoints
+# Ignore Jupyter notebook checkpoints and cache files
 **/.ipynb_checkpoints/
 **/__pycache__/
+# Raw data are too heavy to upload to github, hosted on Google Drive instead
 data/SMHI_data/
 data/raw_data/
 data/sampling_data/
 documentation/Steps of my data pre-processing (finished).docx
+# To heavy to upload to GitHub
 models_archive/
+# Configurations are saved to history subdirrectory of the model after training
+training/configs/
+# For debugging if needed in the future
+training/training_script.ipynb
