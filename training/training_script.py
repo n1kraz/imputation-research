@@ -28,10 +28,6 @@ from pathlib import Path
 script_directory = Path(__file__).resolve().parent
 os.chdir(script_directory)
 
-
-# Scaling input dataset samples to increase model performance
-from sklearn.preprocessing import MinMaxScaler
-
 # Deep learning libraries
 import tensorflow as tf
 from tensorflow import keras
@@ -296,14 +292,14 @@ def windowed_dataset(dataset_list, lag_size, max_possible_lag_size, gap_size, ba
 filepath = f"{home_dir}/models_archive/{config['target']}_models/interpolation_tuned_{config['architecture']}-{config['lag_size']}-{config['gap_size']}-{interval}"
 
 # Column indeces for the features in the original dataset
-initial_param_columns = {'cond': 0, 'temp': 1, 'DO': 2, 'turb': 3, '-pH': 4, 'flow': 5, 'cum_disch':6, 'time_since_last_rain':7, 'time_since_rain_started':8, 'absolute_gradient_flow':9}
+initial_param_columns = {'cond': 0, 'temp': 1, 'DO': 2, 'turb': 3, 'pH': 4, 'flow': 5, 'cum_disch':6, 'time_since_last_rain':7, 'time_since_rain_started':8, 'absolute_gradient_flow':9}
 # initial_param_columns = {'pollution'  :0, 'dew' : 1, 'temp' : 2, 'press' : 3, 'wnd_spd' : 4, 'snow' : 5, 'rain' : 6}
 
 # Chossing parameters that will be part of the model (feature and target selection)
 if config['target'] == 'turb':
     feature_target_param = ['turb', 'flow', 'time_since_rain_started']
-elif config['target'] == '-pH':
-    feature_target_param = ['-pH', 'flow', 'time_since_rain_started']
+elif config['target'] == 'pH':
+    feature_target_param = ['pH', 'flow', 'time_since_rain_started']
 elif config['target'] == 'cond':
     feature_target_param = ['cond', 'flow', 'time_since_rain_started']
 
@@ -754,26 +750,11 @@ if __name__ == "__main__":
 
 # ## Forecasting
 
-# <br><br><br>*For reversing predictions back to original scale*
-
-
-# Load the dictionary containing all merged datasets
-with open(f'{data_path}/prepared_datasets/multipar_datasets_merged_{interval}.pkl', 'rb') as f:
-    multipar_datasets_merged = pickle.load(f)
-
-# Accessing train dataset
-train_datasets_merged_multi = multipar_datasets_merged['train_datasets_merged']
-
-# Initiating scaler
-scaler = MinMaxScaler(feature_range=(0,1))
-# Fitting scaller to ALL train data, so we have to concat precipitation events in train dataset
-scaler = scaler.fit(train_datasets_merged_multi)
-
 
 # <br><br><br>*Running forecast for every instance and saving results*
 
 
-def process_and_forecast(dataset_norm, lag_size, max_possible_lag_size, gap_size, batch_size, par_col, scaler, model, initial_param_columns, forecast_type, filepath):
+def process_and_forecast(dataset_norm, lag_size, max_possible_lag_size, gap_size, batch_size, par_col, model, forecast_type, filepath):
     # Number of instances in each event
     n_inst = [(len(el[max_possible_lag_size: -(max_possible_lag_size)]) - 2 * lag_size) - gap_size + 1 for el in dataset_norm]
     # print(f'Number of instances per event ({forecast_type}):', n_inst)
@@ -781,20 +762,16 @@ def process_and_forecast(dataset_norm, lag_size, max_possible_lag_size, gap_size
     # Collection of instances for each event
     list_of_instance_arrays = [windowed_dataset([event], lag_size, max_possible_lag_size, gap_size, batch_size, par_col, shuffle=False) for event in dataset_norm]
 
-    forecast_multi_norm, forecast_multi = [], []
+    forecast_multi_norm = []
     for X in list_of_instance_arrays:
         # Forecast
         f_m_norm = model.predict(X, batch_size=batch_size, verbose=0)
-        # Reversing normalization after prediction
-        f_m = np.array([scaler.inverse_transform(np.broadcast_to(instance.reshape(-1, 1), (instance.reshape(-1, 1).shape[0], len(initial_param_columns))))[:, par_col] for instance in f_m_norm])
-
+        
         # These two models return 2-dimentional output
         if config['architecture'] in ['MLP', 'CNN']:
             f_m_norm = np.expand_dims(f_m_norm, axis=-1)
-            f_m = np.expand_dims(f_m, axis=-1)
         
         forecast_multi_norm.append(f_m_norm)
-        forecast_multi.append(f_m)
 
     # Filepath for saving forecasts
     filepath_forecasts = f'{filepath}/forecasts'
@@ -805,14 +782,11 @@ def process_and_forecast(dataset_norm, lag_size, max_possible_lag_size, gap_size
     with open(f'{filepath_forecasts}/forecasts_{forecast_type}_norm.pkl', 'wb') as f:
         pickle.dump([forecast_multi_norm], f)
 
-    with open(f'{filepath_forecasts}/forecasts_{forecast_type}.pkl', 'wb') as f:
-        pickle.dump([forecast_multi], f)
-
 # Load saved optimal model
 model = tf.keras.models.load_model(filepath_model)
 
 # Call the function for test and train datasets
-process_and_forecast(test_dataset_norm, config['lag_size'], max_possible_lag_size, config['gap_size'], config['batch_size'], par_col, scaler, model, initial_param_columns, forecast_type='test', filepath=filepath)
-process_and_forecast(val_dataset_norm, config['lag_size'], max_possible_lag_size, config['gap_size'], config['batch_size'], par_col, scaler, model, initial_param_columns, forecast_type='val', filepath=filepath)
-process_and_forecast(train_dataset_norm, config['lag_size'], max_possible_lag_size, config['gap_size'], config['batch_size'], par_col, scaler, model, initial_param_columns, forecast_type='train', filepath=filepath)
+process_and_forecast(test_dataset_norm, config['lag_size'], max_possible_lag_size, config['gap_size'], config['batch_size'], par_col, model, forecast_type='test', filepath=filepath)
+process_and_forecast(val_dataset_norm, config['lag_size'], max_possible_lag_size, config['gap_size'], config['batch_size'], par_col, model, forecast_type='val', filepath=filepath)
+process_and_forecast(train_dataset_norm, config['lag_size'], max_possible_lag_size, config['gap_size'], config['batch_size'], par_col, model, forecast_type='train', filepath=filepath)
 
