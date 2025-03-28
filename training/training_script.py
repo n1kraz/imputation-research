@@ -28,15 +28,12 @@ from pathlib import Path
 script_directory = Path(__file__).resolve().parent
 os.chdir(script_directory)
 
-
-# Scaling input dataset samples to increase model performance
-from sklearn.preprocessing import MinMaxScaler
-
 # Deep learning libraries
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.models import Model
+from tensorflow.keras.initializers import GlorotUniform
 import keras_tuner as kt
 
 # Display TensorFlow version
@@ -120,10 +117,12 @@ def main(config_file):
     batch_size  = int(configuration['Test_case']['batch_size'])
     
     # Access settings of optimization process
+    optimization = configuration.getboolean('Optimization', 'optimization')
     n_trials  = int(configuration['Optimization']['n_trials'])
     n_epochs_trial  = int(configuration['Optimization']['n_epochs_trial'])
 
-    # Access number of training epochs for the optimized model
+    # Access number of training runs and epochs per run for the model
+    n_runs = int(configuration['Training']['n_runs'])
     n_epochs = int(configuration['Training']['n_epochs'])
     
 
@@ -134,8 +133,10 @@ def main(config_file):
         'lag_size': lag_size,
         'gap_size': gap_size,
         'batch_size': batch_size,
+        'optimization': optimization,
         'n_trials': n_trials,
         'n_epochs_trial': n_epochs_trial,
+        'n_runs': n_runs,
         'n_epochs': n_epochs
     }
 
@@ -293,17 +294,17 @@ def windowed_dataset(dataset_list, lag_size, max_possible_lag_size, gap_size, ba
 
 
 # Directory for the models
-filepath = f"{home_dir}/models_archive/{config['target']}_models/interpolation_tuned_{config['architecture']}-{config['lag_size']}-{config['gap_size']}-{interval}"
+filepath = f"{home_dir}/models_archive/{config['target']}_models/{config['architecture']}-{config['lag_size']}-{config['gap_size']}-{interval}"
 
 # Column indeces for the features in the original dataset
-initial_param_columns = {'cond': 0, 'temp': 1, 'DO': 2, 'turb': 3, '-pH': 4, 'flow': 5, 'cum_disch':6, 'time_since_last_rain':7, 'time_since_rain_started':8, 'absolute_gradient_flow':9}
+initial_param_columns = {'cond': 0, 'temp': 1, 'DO': 2, 'turb': 3, 'pH': 4, 'flow': 5, 'cum_disch':6, 'time_since_last_rain':7, 'time_since_rain_started':8, 'absolute_gradient_flow':9}
 # initial_param_columns = {'pollution'  :0, 'dew' : 1, 'temp' : 2, 'press' : 3, 'wnd_spd' : 4, 'snow' : 5, 'rain' : 6}
 
 # Chossing parameters that will be part of the model (feature and target selection)
 if config['target'] == 'turb':
     feature_target_param = ['turb', 'flow', 'time_since_rain_started']
-elif config['target'] == '-pH':
-    feature_target_param = ['-pH', 'flow', 'time_since_rain_started']
+elif config['target'] == 'pH':
+    feature_target_param = ['pH', 'flow', 'time_since_rain_started']
 elif config['target'] == 'cond':
     feature_target_param = ['cond', 'flow', 'time_since_rain_started']
 
@@ -351,64 +352,10 @@ def save_history(history, directory, filename):
         pickle.dump(history, file)
 
 
-# <br><br><br>*Model names*
-
-
-
-def make_model_name(hps, arch):
-    if arch == 'CNN':
-        model_name = ''
-        model_name += 'h1_1'
-        model_name += str(hps.get('CNN_head1_1'))
-        model_name += 'h1_2'
-        model_name += str(hps.get('CNN_head1_2'))
-        model_name += '_ks'
-        model_name += str(hps.get('kern_size_head1'))
-        model_name += '-'
-        model_name += 'h2_1'
-        model_name += str(hps.get('CNN_head2_1'))
-        model_name += 'h2_2'
-        model_name += str(hps.get('CNN_head2_2'))
-        model_name += '_ks'
-        model_name += str(hps.get('kern_size_head2'))
-        model_name += '-'
-        model_name += 'h3_1'
-        model_name += str(hps.get('CNN_head3_1'))
-        model_name += 'h3_2'
-        model_name += str(hps.get('CNN_head3_2'))
-        model_name += '_ks'
-        model_name += str(hps.get('kern_size_head3'))
-        model_name += '-'
-        model_name += 'd_n'
-        model_name += str(hps.get(f'Dense_layer_n_units'))
-
-    elif arch == 'LSTM':
-        model_name = ''
-        model_name += 'lstm_1_'
-        model_name += str(hps.get(f'Bi_LSTM_0'))
-        model_name += '-'
-        model_name += 'lstm_2_'
-        model_name += str(hps.get(f'Bi_LSTM_1'))
-        model_name += '-'
-        model_name += 'td_d_'
-        model_name += str(hps.get(f'TD_Dense_layer_n_units'))
-
-    elif arch == 'MLP':
-        model_name = ''
-        model_name += 'l1_'
-        model_name += str(hps.get('MLP_head1'))
-        model_name += '-l2_'
-        model_name += str(hps.get('MLP_head2'))
-        model_name += '-'
-        model_name += 'd_n'
-        model_name += str(hps.get(f'Dense_layer_n_units'))
-    return model_name
-
 
 # ### Optymization algorithm
 
 # <br><br><br>***Three-headed CNN***
-
 
 
 if config['architecture'] == 'MLP':
@@ -473,8 +420,8 @@ if config['architecture'] == 'MLP':
         
         # Compile the model
         model.compile(optimizer=keras.optimizers.Adam(learning_rate=hp_learning_rate),
-                      loss='mse',
-                      metrics=['mean_absolute_error', 'mean_squared_error'])
+                    loss='mse',
+                    metrics=['mean_absolute_error', 'mean_squared_error'])
     
         return model
 
@@ -598,221 +545,221 @@ elif config['architecture'] == 'LSTM':
 
 
 
+if config['optimization']:
+    # Use Bayesian Optimization for tuning
+    tuner = kt.BayesianOptimization(
+        model_builder,
+        objective = kt.Objective('val_mean_squared_error', direction = 'min'),
+        max_trials = config['n_trials'],
+        directory = f'{filepath}',
+        project_name = 'bayesian_optimization_logs'
+    )
 
-# Use Bayesian Optimization for tuning
-tuner = kt.BayesianOptimization(
-    model_builder,
-    objective = kt.Objective('val_mean_squared_error', direction = 'min'),
-    max_trials = config['n_trials'],
-    directory = f'{filepath}',
-    project_name = 'bayesian_optimization_logs'
-)
-
-# Running the search
-tuner.search(
-    train_dataset_windowed,
-    epochs = config['n_epochs_trial'],
-    validation_data = val_dataset_windowed,
-    verbose = 1,
-    callbacks = [tf.keras.callbacks.EarlyStopping(monitor = 'val_mean_squared_error', patience = 10)]
-)
+    # Running the search
+    tuner.search(
+        train_dataset_windowed,
+        epochs = config['n_epochs_trial'],
+        validation_data = val_dataset_windowed,
+        verbose = 1,
+        callbacks = [tf.keras.callbacks.EarlyStopping(monitor = 'val_mean_squared_error', patience = 10)]
+    )
 
 
 
-# Get the optimal hyperparameters
-best_hps=tuner.get_best_hyperparameters(num_trials=10)[0]
-# Number of the best trial
-print(tuner.oracle.get_best_trials(num_trials=10)[0].trial_id)
+    # Get the optimal hyperparameters
+    best_hps=tuner.get_best_hyperparameters(num_trials=10)[0]
+    # Number of the best trial
+    print(tuner.oracle.get_best_trials(num_trials=10)[0].trial_id)
 
 
 # ### Training of the model with optimal hyperparameters
+def load_and_reinitialize_model():
+    model_path = f"{home_dir}/models_archive/{config['target']}_models/{config['architecture']}-{config['lag_size']}-{config['gap_size']}-30s/run_0/model"
+    # Load the complete model (architecture + weights)
+    model = tf.keras.models.load_model(model_path)
 
-
-print('Best configuration:', make_model_name(best_hps, config['architecture']))
-
-
-# Build the model with the optimal hyperparameters and retrain it
-model = tuner.hypermodel.build(best_hps)
-
-# Filepaths 
-filepath_model = f"{filepath}/{make_model_name(best_hps, config['architecture'])}"
-filepath_history = f"{filepath}/history"
-
-# Fit and save models
-history = model.fit(
-    train_dataset_windowed,
-    validation_data = val_dataset_windowed,
-    epochs = config['n_epochs'],
-    verbose = 1,
-    callbacks = [
-        tf.keras.callbacks.ModelCheckpoint(
-            filepath = filepath_model,
-            monitor = 'val_mean_squared_error',
-            mode = 'min',
-            save_best_only = True,
-            verbose = 0
-        ),
-        tf.keras.callbacks.EarlyStopping(
-            monitor = 'val_mean_squared_error',
-            patience = 100
-        )
-    ]
-)
-# Saving history
-save_history(history.history, filepath_history, 'history.pkl')
-
-
-# ### History of training
-
-# Saving history plots
-
-
-def plot_series(x, y, format=('-', '-'), start=None, end=None, x_name='Time', y_name='Value', title=None, label=None):
-    '''
-    Visualizes time series data
-
-    Args:
-      x (array of int) - contains indeces
-      y (array) - contains the measurements for each time step
-      format - line style when plotting the graph
-      start - first time step to plot
-      end - last time step to plot
-    '''
-    # Setup dimensions of the graph figure
-    plt.figure(figsize=(10, 6))
+    tf.random.set_seed(42)
     
-    n = 0
-    for x_n, y_n in zip(x, y):
-        # Plot the time series data for each of the curves consequently
-        plt.plot(x_n, y_n, format[n], label=label[n] if label else None)
-        n += 1
+    # Reinitialize weights to remove the effect of saved weights
+    for layer in model.layers:
+        if hasattr(layer, 'kernel_initializer') and hasattr(layer, 'bias_initializer'):
+            layer.set_weights([
+                layer.kernel_initializer(shape=layer.kernel.shape),
+                layer.bias_initializer(shape=layer.bias.shape)
+            ])
 
-    # Legend
-    plt.legend()
-    
-    # Title
-    plt.title(title)
-    
-    # Label the x-axis
-    plt.xlabel(x_name)
-
-    # Label the y-axis
-    plt.ylabel(y_name)
-
-    # Overlay a grid on the graph
-    plt.grid(True)
-    
-    # For plotting only part of the graph
-    if start != None or end != None:
-        plt.gca().set_xlim(start, end)
-
-    # Saving to history folder
-    plt.savefig(f'{filepath}/history/{y_name}.png', dpi=300)
-
-    # Avoiding printing out the figures
-    plt.close()
-
-
-def model_performance(history, title, par, par_name):   
- # Histories of training and validation scores progress
-    train = history[par]
-    val = history[f'val_{par}']
-    # Number of training epochs
-    epochs = range(1, len(train) + 1)
-    
-    # Plot 
-    plot_series((epochs, epochs), (train, val), format=('-', '-'), x_name = 'Epochs', y_name = par_name, label = (f'Train {par_name}', f'Val {par_name}'), title = title)  
-
-
-# Calling history plot functions
-model_performance(history.history, title = 'Training/validation metric', par = 'mean_squared_error', par_name = 'MSE')
-model_performance(history.history, title = 'Training/validation metric', par = 'mean_absolute_error', par_name = 'MAE')
-
-
-# Savaing configuration file to history
-
-
-def load_and_save_config(config_file):
-    # Create a ConfigParser object
-    configuration = configparser.ConfigParser()
-
-    # Load the existing configuration file
-    configuration.read(config_file)
-
-    # Save the modified config to a new folder
-    with open(f"{filepath}/history/config.ini", 'w') as configfile:
-        configuration.write(configfile)
-
-# Importing configuration
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run script with a configuration")
-    parser.add_argument('--config', type=str, required=True, help='Path to the configuration file')
-
-    args = parser.parse_args()
-    load_and_save_config(args.config)
-
-
-# ## Forecasting
-
-# <br><br><br>*For reversing predictions back to original scale*
-
-
-# Load the dictionary containing all merged datasets
-with open(f'{data_path}/prepared_datasets/multipar_datasets_merged_{interval}.pkl', 'rb') as f:
-    multipar_datasets_merged = pickle.load(f)
-
-# Accessing train dataset
-train_datasets_merged_multi = multipar_datasets_merged['train_datasets_merged']
-
-# Initiating scaler
-scaler = MinMaxScaler(feature_range=(0,1))
-# Fitting scaller to ALL train data, so we have to concat precipitation events in train dataset
-scaler = scaler.fit(train_datasets_merged_multi)
-
-
-# <br><br><br>*Running forecast for every instance and saving results*
-
-
-def process_and_forecast(dataset_norm, lag_size, max_possible_lag_size, gap_size, batch_size, par_col, scaler, model, initial_param_columns, forecast_type, filepath):
-    # Number of instances in each event
-    n_inst = [(len(el[max_possible_lag_size: -(max_possible_lag_size)]) - 2 * lag_size) - gap_size + 1 for el in dataset_norm]
-    # print(f'Number of instances per event ({forecast_type}):', n_inst)
-
-    # Collection of instances for each event
-    list_of_instance_arrays = [windowed_dataset([event], lag_size, max_possible_lag_size, gap_size, batch_size, par_col, shuffle=False) for event in dataset_norm]
-
-    forecast_multi_norm, forecast_multi = [], []
-    for X in list_of_instance_arrays:
-        # Forecast
-        f_m_norm = model.predict(X, batch_size=batch_size, verbose=0)
-        # Reversing normalization after prediction
-        f_m = np.array([scaler.inverse_transform(np.broadcast_to(instance.reshape(-1, 1), (instance.reshape(-1, 1).shape[0], len(initial_param_columns))))[:, par_col] for instance in f_m_norm])
-
-        # These two models return 2-dimentional output
-        if config['architecture'] in ['MLP', 'CNN']:
-            f_m_norm = np.expand_dims(f_m_norm, axis=-1)
-            f_m = np.expand_dims(f_m, axis=-1)
         
-        forecast_multi_norm.append(f_m_norm)
-        forecast_multi.append(f_m)
+    return model
 
-    # Filepath for saving forecasts
-    filepath_forecasts = f'{filepath}/forecasts'
-    if not os.path.exists(filepath_forecasts):
-        os.makedirs(filepath_forecasts)
 
-    # Save normalized and regular forecasts to pickle files
-    with open(f'{filepath_forecasts}/forecasts_{forecast_type}_norm.pkl', 'wb') as f:
-        pickle.dump([forecast_multi_norm], f)
 
-    with open(f'{filepath_forecasts}/forecasts_{forecast_type}.pkl', 'wb') as f:
-        pickle.dump([forecast_multi], f)
 
-# Load saved optimal model
-model = tf.keras.models.load_model(filepath_model)
+# Looping the model training
+for run in range(config['n_runs']):
+    # Build the model with the optimal hyperparameters and retrain it
+    if config['optimization']:
+        # Using best configuration found in optimiztion process
+        model = tuner.hypermodel.build(best_hps)
+        # No runs exist 
+        first_run = 0
+    else:
+        # Loading one of the models from archive
+        model = load_and_reinitialize_model()
+        # Starting from the run_1, as run_0 already exists
+        first_run = 1
 
-# Call the function for test and train datasets
-process_and_forecast(test_dataset_norm, config['lag_size'], max_possible_lag_size, config['gap_size'], config['batch_size'], par_col, scaler, model, initial_param_columns, forecast_type='test', filepath=filepath)
-process_and_forecast(val_dataset_norm, config['lag_size'], max_possible_lag_size, config['gap_size'], config['batch_size'], par_col, scaler, model, initial_param_columns, forecast_type='val', filepath=filepath)
-process_and_forecast(train_dataset_norm, config['lag_size'], max_possible_lag_size, config['gap_size'], config['batch_size'], par_col, scaler, model, initial_param_columns, forecast_type='train', filepath=filepath)
 
+    # Filepaths 
+    filepath_model = f"{filepath}/run_{run + first_run}/model"
+    filepath_history = f"{filepath}/run_{run + first_run}/history"
+    filepath_forecasts = f"{filepath}/run_{run + first_run}/forecasts"
+
+
+    # Fit and save models
+    history = model.fit(
+        train_dataset_windowed,
+        validation_data = val_dataset_windowed,
+        epochs = config['n_epochs'],
+        verbose = 1,
+        callbacks = [
+            tf.keras.callbacks.ModelCheckpoint(
+                filepath = filepath_model,
+                monitor = 'val_mean_squared_error',
+                mode = 'min',
+                save_best_only = True,
+                verbose = 0
+            ),
+            tf.keras.callbacks.EarlyStopping(
+                monitor = 'val_mean_squared_error',
+                patience = 100
+            )
+        ]
+    )
+    # Saving history
+    save_history(history.history, filepath_history, 'history.pkl')
+
+
+    # ### History of training
+
+    # Saving history plots
+
+
+    def plot_series(x, y, format=('-', '-'), start=None, end=None, x_name='Time', y_name='Value', title=None, label=None):
+        '''
+        Visualizes time series data
+
+        Args:
+        x (array of int) - contains indeces
+        y (array) - contains the measurements for each time step
+        format - line style when plotting the graph
+        start - first time step to plot
+        end - last time step to plot
+        '''
+        # Setup dimensions of the graph figure
+        plt.figure(figsize=(10, 6))
+        
+        n = 0
+        for x_n, y_n in zip(x, y):
+            # Plot the time series data for each of the curves consequently
+            plt.plot(x_n, y_n, format[n], label=label[n] if label else None)
+            n += 1
+
+        # Legend
+        plt.legend()
+        
+        # Title
+        plt.title(title)
+        
+        # Label the x-axis
+        plt.xlabel(x_name)
+
+        # Label the y-axis
+        plt.ylabel(y_name)
+
+        # Overlay a grid on the graph
+        plt.grid(True)
+        
+        # For plotting only part of the graph
+        if start != None or end != None:
+            plt.gca().set_xlim(start, end)
+
+        # Saving to history folder
+        plt.savefig(f'{filepath_history}/{y_name}.png', dpi=300)
+
+        # Avoiding printing out the figures
+        plt.close()
+
+
+    def model_performance(history, title, par, par_name):   
+        # Histories of training and validation scores progress
+        train = history[par]
+        val = history[f'val_{par}']
+        # Number of training epochs
+        epochs = range(1, len(train) + 1)
+        
+        # Plot 
+        plot_series((epochs, epochs), (train, val), format=('-', '-'), x_name = 'Epochs', y_name = par_name, label = (f'Train {par_name}', f'Val {par_name}'), title = title)  
+
+
+    # Calling history plot functions
+    model_performance(history.history, title = 'Training/validation metric', par = 'mean_squared_error', par_name = 'MSE')
+    model_performance(history.history, title = 'Training/validation metric', par = 'mean_absolute_error', par_name = 'MAE')
+
+
+    # Savaing configuration file to history
+
+
+    def load_and_save_config(config_file):
+        # Create a ConfigParser object
+        configuration = configparser.ConfigParser()
+
+        # Load the existing configuration file
+        configuration.read(config_file)
+
+        # Save the modified config to a new folder
+        with open(f"{filepath_history}/config.ini", 'w') as configfile:
+            configuration.write(configfile)
+
+    # Importing configuration
+    if __name__ == "__main__":
+        parser = argparse.ArgumentParser(description="Run script with a configuration")
+        parser.add_argument('--config', type=str, required=True, help='Path to the configuration file')
+
+        args = parser.parse_args()
+        load_and_save_config(args.config)
+
+
+    # ## Forecasting
+
+
+    # <br><br><br>*Running forecast for every instance and saving results*
+
+
+    def process_and_forecast(dataset_norm, forecast_type):
+        # Collection of instances for each event
+        list_of_instance_arrays = [windowed_dataset([event], config['lag_size'], max_possible_lag_size, config['gap_size'], config['batch_size'], par_col, shuffle=False) for event in dataset_norm]
+
+        forecast_multi_norm = []
+        for X in list_of_instance_arrays:
+            # Forecast
+            f_m_norm = model.predict(X, batch_size=config['batch_size'], verbose=0)
+            
+            # These two models return 2-dimentional output
+            if config['architecture'] in ['MLP', 'CNN']:
+                f_m_norm = np.expand_dims(f_m_norm, axis=-1)
+            
+            forecast_multi_norm.append(f_m_norm)
+
+        # Filepath for saving forecasts
+        if not os.path.exists(filepath_forecasts):
+            os.makedirs(filepath_forecasts)
+
+        # Save normalized and regular forecasts to pickle files
+        with open(f'{filepath_forecasts}/forecasts_{forecast_type}_norm.pkl', 'wb') as f:
+            pickle.dump([forecast_multi_norm], f)
+
+
+    # Call the function for test and train datasets
+    process_and_forecast(test_dataset_norm, forecast_type='test')
+    process_and_forecast(val_dataset_norm, forecast_type='val')
+    process_and_forecast(train_dataset_norm, forecast_type='train')
